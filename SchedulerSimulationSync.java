@@ -371,8 +371,12 @@ class CpuWorker extends Thread {
 
             // TODO Feature 3: replace this polling loop by a blocking wait on the counting
             // semaphore
-            Thread thread = readyQueue.poll();
+            Thread thread = readyQueue.take();
             if (thread == null) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
+
                 // ⚠️ BUSY WAITING: the CPU keeps checking an empty queue instead of sleeping
                 // until
                 // a process is available. It wastes CPU time and needs the "completed == total"
