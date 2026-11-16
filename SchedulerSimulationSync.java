@@ -7,6 +7,7 @@ import java.util.Random;
 // TODO (Feature 1 and Feature 2): import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantLock;
 // TODO (Feature 3):               import java.util.concurrent.Semaphore;
+import java.util.concurrent.Semaphore;
 
 // ANSI Color Codes for enhanced terminal output (same as Assignment 1)
 class Colors {
@@ -158,6 +159,7 @@ class ReadyQueue {
     private final ReentrantLock queueLock = new ReentrantLock();// Feature 1: Lock protecting the shared ready queue
 
     // TODO Feature 3: declare the counting semaphore that counts the processes
+    private final Semaphore available = new Semaphore(0); // Feature 3: Semaphore counting available processes
     // waiting in the ready queue here
 
     // Add a process to the ready queue (new process, or a process that did not
@@ -173,6 +175,7 @@ class ReadyQueue {
             queueLock.unlock();
         }
         // TODO Feature 3: signal that one more process is available in the queue
+        available.release();
 
         System.out.println(Colors.BLUE + "  ➕ " + Colors.BOLD + Colors.CYAN + process.getName() + Colors.RESET +
                 Colors.BLUE + " (Priority: " + process.getPriority() + ") added to ready queue" + Colors.RESET +
@@ -224,6 +227,22 @@ class ReadyQueue {
         } finally {
             queueLock.unlock();
         }
+    }
+
+    // Feature 3: Wait until a process becomes available
+    public Thread take() {
+        try {
+            available.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        return poll();
+    }
+
+    // Feature 3: Wake up CPUs when all processes are completed
+    public void wakeAllCPUs() {
+        available.release(SharedStats.totalCPUs);
     }
 }
 
@@ -357,11 +376,7 @@ class CpuWorker extends Thread {
                 // ⚠️ BUSY WAITING: the CPU keeps checking an empty queue instead of sleeping
                 // until
                 // a process is available. It wastes CPU time and needs the "completed == total"
-                // test above to stop.
-                SharedStats.busyWaitPolls.incrementAndGet(); // (counted for the verification block)
-                try {
-                    Thread.sleep(20);
-                } catch (InterruptedException e) {
+                if (SharedStats.getCompletedProcessCount() >= SharedStats.totalProcesses) {
                     return;
                 }
                 continue;
@@ -386,6 +401,10 @@ class CpuWorker extends Thread {
 
             // TODO Feature 3: when the LAST process has completed, wake up the CPUs that
             // are blocked on the
+
+            if (SharedStats.getCompletedProcessCount() >= SharedStats.totalProcesses) {
+                readyQueue.wakeAllCPUs(); // Feature 3: Wake up CPUs when all processes are completed
+            }
             // semaphore so that they can terminate (otherwise they would wait forever!)
         }
     }
